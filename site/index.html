@@ -50,6 +50,11 @@ img{-webkit-user-drag:none}
 .rbtn{pointer-events:auto;border:0;cursor:pointer;width:38px;height:38px;padding:0;border-radius:50%;background:var(--panel);color:#fff;display:grid;place-items:center}
 .rbtn:focus-visible,.dbtn:focus-visible,.cta:focus-visible,.link:focus-visible,.lv:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .rbtn svg{width:20px;height:20px}
+#homeBtn{position:relative}
+#homeBtn::after{content:'';position:absolute;inset:-5px;border-radius:50%;background:conic-gradient(var(--gold) var(--p,0%),transparent 0);-webkit-mask:radial-gradient(circle,transparent 60%,#000 61%);mask:radial-gradient(circle,transparent 60%,#000 61%);opacity:0}
+#homeBtn.hold::after{opacity:1;animation:fillring 1s linear forwards}
+@property --p{syntax:'<percentage>';inherits:false;initial-value:0%}
+@keyframes fillring{to{--p:100%}}
 #progress{position:relative;width:min(78%,420px);height:10px;border-radius:99px;background:rgba(255,255,255,.75);box-shadow:inset 0 2px 0 rgba(0,0,0,.12);margin-top:14px}
 #progress .flag{position:absolute;right:-6px;top:-8px;width:14px;height:26px;background:repeating-conic-gradient(#222 0 25%,#fff 0 50%) 0 0/7px 7px;border-radius:2px}
 .mk{position:absolute;top:50%;width:18px;height:18px;margin-left:-9px;margin-top:-9px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 0 rgba(0,0,0,.25);transition:left .08s linear}
@@ -132,6 +137,7 @@ h2{font-family:var(--display);font-weight:400;margin:0;font-size:clamp(32px,9vw,
   <div id="hud">
     <div class="toprow">
       <div class="tools">
+        <button class="rbtn" id="homeBtn" aria-label="Mantén presionado para volver" hidden><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3z"/></svg></button>
         <button class="rbtn" id="muteBtn" aria-label="Silenciar sonido"></button>
         <button class="rbtn" id="fsBtn" aria-label="Pantalla completa"></button>
       </div>
@@ -320,6 +326,13 @@ const LOCK = '<svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0
 function paintMute() { $('#muteBtn').innerHTML = save.muted ? ICON_OFF : ICON_ON; $('#muteBtn').setAttribute('aria-label', save.muted ? 'Activar sonido' : 'Silenciar sonido'); }
 $('#muteBtn').addEventListener('click', () => { save.muted = !save.muted; persist(); paintMute(); beep(660); });
 paintMute();
+// Casita para volver a los juegos (solo dentro de leon.beto.page): mantener presionada 1 segundo
+if (window.LEON_HUB) {
+  const b = $('#homeBtn'); b.hidden = false; let t = null;
+  const cancel = () => { b.classList.remove('hold'); clearTimeout(t); };
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('hold'); t = setTimeout(() => (location.href = window.LEON_HUB), 1000); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, cancel));
+}
 
 /* ---------- Pantalla completa ---------- */
 const FS_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
@@ -1030,7 +1043,7 @@ function updateHud() {
   racers.forEach((r, i) => { markers[i].style.left = Math.min(100, r.d / finishD * 100) + '%'; });
   $('#coins').textContent = save.coins; $('#levelPill').textContent = 'NIVEL ' + curLevel;
   const want = BEST[segAt(player.d + 5).type];
-  const helpOn = state === 'race' && (curLevel <= 3 || isNewDino(curLevel, want) || player.blockT > .6);
+  const helpOn = state === 'race';
   for (const k in dockBtns) dockBtns[k].classList.toggle('hint', helpOn && k === want && player.form !== want);
 }
 function toast(txt) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = txt; app.appendChild(t); setTimeout(() => t.remove(), 1400); }
@@ -1044,8 +1057,8 @@ function resetRace() {
   racers.forEach((r, i) => {
     r.d = 0; r.y = 0; r.vy = 0; r.spd = 0; r.finished = false; r.place = 0; r.time = 0; r.switchT = 0; r.lastType = 'ground'; r.blockT = 0; r.told = false;
     r.forms[r.form].g.visible = false; r.form = 'raptor'; r.forms.raptor.g.visible = true;
-    const sk = Math.min(.9, .36 + curLevel * .03 + Math.random() * .12 + (i === 3 ? .03 : 0));
-    r.ai = { skill: sk, pending: null, timer: 0, mult: .85 + sk * .1, list };
+    const sk = Math.min(.75, .3 + curLevel * .02 + Math.random() * .1);
+    r.ai = { skill: sk, pending: null, timer: 0, mult: .74 + sk * .08, list };
     placeRacer(r, 0);
   });
   finishCount = 0; raceT = 0;
@@ -1096,7 +1109,9 @@ function updateRacer(r, dt) {
   if (state === 'race' && !r.player && !r.finished) aiThink(r, dt);
   const sg = segAt(r.d), type = sg.type;
   r.switchT = Math.max(0, r.switchT - dt);
-  let target = SPEED[r.form][type] * (r.player ? 1 : r.ai.mult);
+  let target = SPEED[r.form][type] * (r.player ? 1.08 : r.ai.mult);
+  // Ayuda para León: los rivales que van muy adelante se cansan y lo esperan
+  if (!r.player && r.d > player.d + 6) target *= Math.max(.45, 1 - (r.d - player.d - 6) * .04);
   if (r.switchT > 0) target *= .35;
   if (r.finished) target = Math.max(0, r.spd - 10 * dt);
   if (state !== 'race' && state !== 'done') target = 0;
