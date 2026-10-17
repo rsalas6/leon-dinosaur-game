@@ -14,6 +14,7 @@ rm -rf site/vendor && mkdir -p site/vendor && cp -R vendor/ site/vendor/
   sed -n '1,/^<\/style>$/p' dino-race.html | grep -v 'claude:viewport-fit-sides' | grep -v 'rel="preconnect"' \
     | sed 's#<link rel="stylesheet" href="https://fonts.googleapis.com[^"]*">#<link rel="stylesheet" href="vendor/fonts.css">#'
   printf '</head>\n<body>\n'
+  cat intro.html
   sed '1,/^<\/style>$/d' dino-race.html \
     | sed 's#https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js#vendor/three.min.js#'
   printf "<script>if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js');</script>\n"
