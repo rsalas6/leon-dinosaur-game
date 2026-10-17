@@ -26,7 +26,7 @@ Switch dinosaurs to match the terrain and beat three rivals to the finish line.
 
 The action needs a repository secret named `CLOUDFLARE_API_TOKEN` with the **Cloudflare Pages: Edit** permission.
 
-Live at https://leons-dinosaur-game.beto.page (also https://leon-dinosaur-game.pages.dev).
+Live at https://leon-dinosaur-game.beto.page (also https://leon-dinosaur-game.pages.dev).
 
 ## Local preview
 
