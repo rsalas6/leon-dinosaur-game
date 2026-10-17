@@ -28,6 +28,7 @@ button{touch-action:manipulation;-webkit-touch-callout:none}
 img{-webkit-user-drag:none}
 #app{position:fixed;inset:0;touch-action:none}
 #app canvas{display:block;width:100%;height:100%;touch-action:none}
+#vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 58%,rgba(30,20,50,.3) 100%)}
 
 /* HUD superior */
 #hud{position:absolute;left:0;right:0;top:0;padding-top:calc(env(safe-area-inset-top,0px) + 12px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;align-items:center;gap:12px;pointer-events:none}
@@ -114,6 +115,7 @@ h2{font-family:var(--display);font-weight:400;margin:0;font-size:clamp(32px,9vw,
 </style>
 
 <div id="app">
+  <div id="vignette"></div>
   <div id="hud">
     <div class="toprow">
       <div class="tools">
@@ -230,6 +232,14 @@ const BIOMES = {
   pantano:  { name: 'Pantano',  ui: '#3f8a5a', sky: 0xbfd8b0, fog: [30, 115], hemiG: 0x4a6a30, track: '#a8845a', lane: 0x987450, edge: 0x6e5232, bank: '#5f9a3a', sea: 0x4f8a5a, seaOp: .93, emis: 0, bed: 0x2a4a2a, hill: [0x3f7a35, 0x4c8a3a], cliff: [0x6e5232, 0x5a4228, 0x80623e], rock: [0x7a8a7a, 0x8f9e8a], mud: 0x5a3f22, stone: 0x5a5a4a, deco: ['deadtree', 'mushroom', 'bush', 'reeds', 'reeds'] },
   nieve:    { name: 'Nieve',    ui: '#3f86c8', sky: 0xd8ecff, fog: [45, 150], hemiG: 0xa8b8c8, track: '#bcd2e8', lane: 0xa9c1db, edge: 0xffffff, bank: '#f4f8fd', sea: 0x5ab0e0, seaOp: .85, emis: 0, bed: 0x2a6a9a, hill: [0xf0f6ff, 0xe0eaf6], cliff: [0x8aa0b8, 0x6e86a0, 0xa8bccf], rock: [0x8a96a8, 0xa0acbc], mud: 0x8a96a8, stone: 0x7a8aa0, deco: ['pine', 'pine', 'snowman', 'rock'] },
   volcan:   { name: 'Volcán',   ui: '#d0482a', sky: 0xf3a582, fog: [40, 135], hemiG: 0x6a3a2a, track: '#8a6a5a', lane: 0x7a5a4c, edge: 0xff6a20, bank: '#4a3e40', sea: 0xff5a1a, seaOp: 1, emis: 0xff3a00, bed: 0x5a0a00, hill: [0x4a3a3a, 0x3a2e30], cliff: [0x4a3a3a, 0x3a2a2a, 0x5a4848], rock: [0x5a5058, 0x6a6068], mud: 0x6a6266, stone: 0x3a3030, deco: ['lavarock', 'deadtree', 'rock', 'lavarock'], volcano: true },
+};
+// Detalles visuales de cada paisaje: cielo alto, pasto, flores y nubes
+const LOOK = {
+  selva:    { top: 0x3fb4f0, grass: [0x5cb83e, 0x4ea83a, 0x79c94a], flowers: [0xff5a7a, 0xffd23a, 0xffffff, 0xb07aff], cloud: 0xffffff },
+  desierto: { top: 0x58aef0, grass: [0xc9a050, 0xb58a40], flowers: [], cloud: 0xffffff },
+  pantano:  { top: 0x6d9a86, grass: [0x4a8a35, 0x3a7a30, 0x6a9a3a], flowers: [0xe0d060, 0xffffff], cloud: 0xdfe8dc },
+  nieve:    { top: 0x6aa8e8, grass: [], flowers: [], cloud: 0xffffff },
+  volcan:   { top: 0x4a2030, grass: [], flowers: [0xff7a2a, 0xffb02a], cloud: 0x6a5a5a },
 };
 const LEVELS = [
   { b: 'selva',    d: ['raptor', 'mosa', 'stego'] },
@@ -351,21 +361,28 @@ sun.shadow.mapSize.set(1024, 1024);
 Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 80 });
 scene.add(sun, sun.target);
 
+let camBaseFov = 60;
 function resize() {
   const w = app.clientWidth, h = app.clientHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  camera.fov = w / h < 0.8 ? 72 : 58;
+  camBaseFov = w / h < 0.8 ? 72 : 58;
+  camera.fov = camBaseFov;
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 
 /* ---------- Ayudas de geometría ---------- */
+// Sombreado tipo caricatura: 3 tonos de luz
+const GRAD = (() => {
+  const t = new THREE.DataTexture(new Uint8Array([120, 120, 120, 255, 190, 190, 190, 255, 255, 255, 255, 255]), 3, 1, THREE.RGBAFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t;
+})();
 const matCache = {};
 const M = (c, opts) => {
   const k = c + (opts ? JSON.stringify(opts) : '');
-  return matCache[k] || (matCache[k] = new THREE.MeshLambertMaterial(Object.assign({ color: c }, opts || {})));
+  return matCache[k] || (matCache[k] = new THREE.MeshToonMaterial(Object.assign({ color: c, gradientMap: GRAD }, opts || {})));
 };
 const SPH = new THREE.SphereGeometry(1, 16, 12);
 function ell(rx, ry, rz, m) { const o = new THREE.Mesh(SPH, m); o.scale.set(rx, ry, rz); o.castShadow = true; return o; }
@@ -373,11 +390,22 @@ function cyl(rt, rb, h, m, seg = 10) { const o = new THREE.Mesh(new THREE.Cylind
 function cone(r, h, m, seg = 10) { const o = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), m); o.castShadow = true; return o; }
 function box(w, h, d, m) { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.castShadow = true; o.receiveShadow = true; return o; }
 function shade(hex, l) { const c = new THREE.Color(hex); c.offsetHSL(0, 0, l); return c.getHex(); }
+const SHINE = new THREE.MeshBasicMaterial({ color: 0xffffff });
 function eyes(g, x, y, z, r) {
   for (const s of [-1, 1]) {
     const w = ell(r, r, r, M(0xffffff)); w.position.set(s * x, y, z); g.add(w);
-    const p = ell(r * .55, r * .6, r * .55, M(0x1a1420)); p.position.set(s * (x + r * .5), y + r * .05, z - r * .35); g.add(p);
+    const p = ell(r * .55, r * .6, r * .55, M(0x1a1420)); p.position.set(s * (x + r * .5), y + r * .05, z - r * .35); p.userData.noOutline = true; g.add(p);
+    const h = new THREE.Mesh(SPH, SHINE); h.scale.setScalar(r * .2); h.position.set(s * (x + r * .62), y + r * .3, z - r * .62); h.userData.noOutline = true; g.add(h);
   }
+}
+// Contorno de caricatura (casco invertido) para los dinosaurios
+const OUT_MAT = new THREE.MeshBasicMaterial({ color: 0x2a1f3d, side: THREE.BackSide });
+function addOutlines(root) {
+  const list = [];
+  root.traverse(o => {
+    if (o.isMesh && !o.userData.noOutline && o.material.side !== THREE.DoubleSide && o.material.color && o.material.color.getHex() !== 0xffffff) list.push(o);
+  });
+  for (const o of list) { const h = new THREE.Mesh(o.geometry, OUT_MAT); h.scale.setScalar(1.08); h.userData.noOutline = true; o.add(h); }
 }
 const IVORY = 0xf4e8c8;
 
@@ -608,7 +636,7 @@ const ICON_MODE = location.hash === '#icono';
     const cam = new THREE.PerspectiveCamera(32, 1, .1, 80);
     const colors = { raptor: 0x6cc63a, mosa: 0x2f8fe0, stego: 0xe8503a, ptero: 0xf06a2a, trex: 0x8a4ad0, trice: 0x2ab0a0, brachio: 0xc8c83a, compy: 0xff6aa8 };
     for (const k of Object.keys(BUILDERS)) {
-      const d = BUILDERS[k](colors[k]); d.anim(0.6, 6); sc.add(d.g);
+      const d = BUILDERS[k](colors[k]); d.anim(0.6, 6); addOutlines(d.g); sc.add(d.g);
       const bx = new THREE.Box3().setFromObject(d.g), ctr = bx.getCenter(new THREE.Vector3()), sz = bx.getSize(new THREE.Vector3()).length();
       cam.position.set(ctr.x - sz * 1.35, ctr.y + sz * .55, ctr.z - sz * .9); cam.lookAt(ctr);
       r.render(sc, cam); ICONS[k] = r.domElement.toDataURL(); sc.remove(d.g);
@@ -625,20 +653,20 @@ if (ICON_MODE) {
 /* ---------- Partículas ---------- */
 const parts = [];
 const PGEO = new THREE.IcosahedronGeometry(.18, 0);
-function spawn(pos, color, n, spd = 5, up = 5) {
+function spawn(pos, color, n, spd = 5, up = 5, o = {}) {
   for (let i = 0; i < n; i++) {
     const m = new THREE.Mesh(PGEO, M(color)); m.position.copy(pos);
     m.position.x += (Math.random() - .5) * .8; m.position.y += Math.random() * .6;
-    const s = .6 + Math.random() * .9; m.scale.setScalar(s);
+    const s = (.6 + Math.random() * .9) * (o.size || 1); m.scale.setScalar(s);
     scene.add(m);
-    parts.push({ m, s, life: .7 + Math.random() * .4, v: new THREE.Vector3((Math.random() - .5) * spd, up * (.5 + Math.random()), (Math.random() - .5) * spd) });
+    parts.push({ m, s, grav: o.grav === undefined ? 16 : o.grav, life: .7 + Math.random() * .4, v: new THREE.Vector3((Math.random() - .5) * spd, up * (.5 + Math.random()), (Math.random() - .5) * spd) });
   }
 }
 function updateParts(dt) {
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i]; p.life -= dt;
     if (p.life <= 0) { scene.remove(p.m); parts.splice(i, 1); continue; }
-    p.v.y -= 16 * dt; p.m.position.addScaledVector(p.v, dt);
+    p.v.y -= p.grav * dt; p.m.position.addScaledVector(p.v, dt);
     p.m.rotation.x += dt * 5; p.m.scale.setScalar(p.s * Math.min(1, p.life / .4));
   }
 }
@@ -655,10 +683,37 @@ function noiseTex(base, spread) {
 }
 const texCache = {};
 const tex = (hex, spread) => texCache[hex] || (texCache[hex] = noiseTex(hex, spread));
-function texMat(t, rx, ry) { const c = t.clone(); c.needsUpdate = true; c.repeat.set(rx, ry); return new THREE.MeshLambertMaterial({ map: c }); }
+function texMat(t, rx, ry) { const c = t.clone(); c.needsUpdate = true; c.repeat.set(rx, ry); return new THREE.MeshToonMaterial({ map: c, gradientMap: GRAD }); }
 
-const oceanMat = new THREE.MeshLambertMaterial({ color: 0x3aa8e8, transparent: true, opacity: .88 });
-const ocean = new THREE.Mesh(new THREE.PlaneGeometry(600, 900), oceanMat);
+// Cielo con degradado que sigue a la cámara
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: { top: { value: new THREE.Color(0x3fb4f0) }, bottom: { value: new THREE.Color(0x9ee8d6) } },
+  vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = clamp(vP.y * 2.2, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, pow(h, 0.7)), 1.0); }',
+  side: THREE.BackSide, depthWrite: false, fog: false,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 24, 12), skyMat);
+sky.renderOrder = -1; scene.add(sky);
+
+// Agua: olas en el vértice y destellos que se mueven
+const RIPPLE = (() => {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256; const x = cv.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0, 0, 256, 256); x.lineCap = 'round';
+  for (let k = 0; k < 12; k++) {
+    x.strokeStyle = `rgba(255,255,255,${.35 + Math.random() * .5})`; x.lineWidth = 2 + Math.random() * 3;
+    const y0 = Math.random() * 256, x0 = Math.random() * 256, len = 40 + Math.random() * 70;
+    x.beginPath(); for (let i = 0; i <= len; i += 6) x.lineTo((x0 + i) % 256, y0 + Math.sin(i / 14) * 4); x.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(40, 60); return t;
+})();
+const oceanTime = { value: 0 };
+const oceanMat = new THREE.MeshPhongMaterial({ color: 0x3aa8e8, transparent: true, opacity: .9, shininess: 90, specular: 0x9fd8ff, emissive: 0xffffff, emissiveMap: RIPPLE, emissiveIntensity: .22 });
+oceanMat.onBeforeCompile = sh => {
+  sh.uniforms.uTime = oceanTime;
+  sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+    '#include <begin_vertex>\n vec4 wq = modelMatrix * vec4(transformed, 1.0);\n transformed.z += sin(wq.x * .3 + uTime * 1.7) * .09 + cos(wq.z * .25 + uTime * 1.2) * .09;');
+};
+const ocean = new THREE.Mesh(new THREE.PlaneGeometry(600, 900, 100, 150), oceanMat);
 ocean.rotation.x = -Math.PI / 2; ocean.position.set(0, WATER_Y, -300); ocean.receiveShadow = true; scene.add(ocean);
 const bedMat = new THREE.MeshLambertMaterial({ color: 0x2a6fa0 });
 const bed = new THREE.Mesh(new THREE.PlaneGeometry(600, 900), bedMat);
@@ -763,11 +818,49 @@ function buildObstacle(kind, x, z) {
   return add(g);
 }
 
+// Pasto y flores a los lados de la pista (una sola llamada de dibujo para cada tipo)
+const dummy = new THREE.Object3D(), tmpCol = new THREE.Color();
+function scatterPlants(ranges) {
+  const total = ranges.reduce((a, r) => a + r.end - r.start, 0); if (!total) return;
+  const at = () => { let t = Math.random() * total; for (const r of ranges) { const L = r.end - r.start; if (t < L) return [r.start + t, r.y]; t -= L; } return [ranges[0].start, ranges[0].y]; };
+  const fill = (geo, mat, n, colors, place) => {
+    const im = new THREE.InstancedMesh(geo, mat, n);
+    for (let i = 0; i < n; i++) { place(); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); im.setColorAt(i, tmpCol.setHex(pick(colors))); }
+    im.instanceColor.needsUpdate = true; add(im);
+  };
+  if (B.grass.length) fill(new THREE.ConeGeometry(.1, .6, 4), new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: GRAD }), save.lowQ ? 300 : 900, B.grass, () => {
+    const [z, y] = at(); dummy.position.set((Math.random() < .5 ? -1 : 1) * rnd(5.4, 14), y + .25, -z);
+    dummy.rotation.set(rnd(-.35, .35), Math.random() * 3, rnd(-.35, .35)); dummy.scale.setScalar(rnd(.7, 1.5));
+  });
+  if (B.flowers.length) fill(new THREE.IcosahedronGeometry(.16, 0), B.volcano ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: GRAD }), save.lowQ ? 80 : 240, B.flowers, () => {
+    const [z, y] = at(); dummy.position.set((Math.random() < .5 ? -1 : 1) * rnd(5.6, 13), y + (B.volcano ? .05 : .32), -z);
+    dummy.rotation.set(Math.random(), Math.random(), 0); dummy.scale.setScalar(rnd(.7, 1.3));
+  });
+}
+function addClouds(len) {
+  const n = save.lowQ ? 120 : 260;
+  const im = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshToonMaterial({ color: B.cloud, gradientMap: GRAD }), n);
+  let i = 0;
+  while (i < n) {
+    const cx = (Math.random() < .5 ? -1 : 1) * rnd(22, 85), cy = rnd(20, 38), cz = -rnd(-60, len + 60), k = Math.min(n - i, 4 + Math.floor(Math.random() * 3));
+    for (let j = 0; j < k; j++, i++) {
+      const s = rnd(2.4, 4.4); dummy.position.set(cx + (j - k / 2) * rnd(2.4, 3.4), cy + rnd(-.4, 1.4), cz + rnd(-1.5, 1.5));
+      dummy.rotation.set(0, 0, 0); dummy.scale.set(s, s * .7, s * .85); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
+    }
+  }
+  add(im);
+}
+
 function setBiome(b) {
   B = BIOMES[b];
   scene.background.setHex(B.sky); scene.fog.color.setHex(B.sky); scene.fog.near = B.fog[0]; scene.fog.far = B.fog[1];
   hemi.groundColor.setHex(B.hemiG);
-  oceanMat.color.setHex(B.sea); oceanMat.opacity = B.seaOp; oceanMat.transparent = B.seaOp < 1; oceanMat.emissive.setHex(B.emis); oceanMat.needsUpdate = true;
+  Object.assign(B, LOOK[b]);
+  B.dust = new THREE.Color(B.track).offsetHSL(0, -.1, .12).getHex();
+  skyMat.uniforms.top.value.setHex(B.top); skyMat.uniforms.bottom.value.setHex(B.sky);
+  oceanMat.color.setHex(B.sea); oceanMat.opacity = B.seaOp; oceanMat.transparent = B.seaOp < 1;
+  oceanMat.emissive.setHex(B.volcano ? 0xffb040 : 0xffffff); oceanMat.emissiveIntensity = B.volcano ? 1 : .22;
+  oceanMat.needsUpdate = true;
   bedMat.color.setHex(B.bed);
   document.documentElement.style.setProperty('--sky', '#' + B.sky.toString(16).padStart(6, '0'));
 }
@@ -776,7 +869,7 @@ function buildLevel(level) {
   curLevel = level;
   const def = levelDef(level);
   setBiome(def.b);
-  levelGroup.traverse(o => { if (o.geometry && o.geometry !== SPH && o.geometry !== PGEO) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } });
+  levelGroup.traverse(o => { if (o.geometry && o.geometry !== SPH && o.geometry !== PGEO) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } else if (o.isInstancedMesh) o.material.dispose(); });
   scene.remove(levelGroup); levelGroup = new THREE.Group(); scene.add(levelGroup);
   segments = []; obstacles = [[], [], [], []];
   const avail = def.d.map(k => TERR[k]).filter(t => t !== 'ground');
@@ -813,6 +906,9 @@ function buildLevel(level) {
         else DECO.rock(x, WATER_Y - .3, -z);
       }
       for (const s of [-1, 1]) { const b = new THREE.Mesh(new THREE.BoxGeometry(.4, .35, sg.len), M(0xf2f2f2)); b.position.set(s * TRACK_W / 2, WATER_Y + .05, zc); add(b); }
+      // Espuma en la orilla
+      const foamM = new THREE.MeshBasicMaterial({ color: B.volcano ? 0xffc04a : 0xffffff, transparent: true, opacity: .6, depthWrite: false });
+      for (const e of [sg.start, sg.end]) for (const w of [1.8, 3.2]) { const f = new THREE.Mesh(new THREE.PlaneGeometry(TRACK_W + 70, w * .45), foamM); f.rotation.x = -Math.PI / 2; f.position.set(0, WATER_Y + .03, -(e + (e === sg.start ? w : -w) * .5)); add(f); }
     }
     if (sg.type === 'mud') {
       const base = new THREE.Mesh(new THREE.BoxGeometry(TRACK_W, 1, sg.len), M(shade(B.mud, -.1))); base.position.set(0, -1.9, zc); add(base);
@@ -835,6 +931,8 @@ function buildLevel(level) {
       decorate(sg.start, sg.end, CLIFF_H);
     }
   }
+  scatterPlants(segments.filter(s => s.type !== 'water').map(s => ({ start: s.start, end: s.end, y: s.type === 'cliff' ? CLIFF_H + .1 : -.05 })));
+  addClouds(d);
   // Fondo
   for (let z = 0; z < d; z += 18) for (const s of [-1, 1]) {
     if (B.mesas) { const m = cyl(rnd(7, 12), rnd(9, 15), rnd(8, 16), M(pick(B.hill)), 8); m.castShadow = false; m.position.set(s * rnd(55, 75), 2, -z); add(m); }
@@ -874,7 +972,7 @@ const TAG_H = { raptor: 3.5, mosa: 2, stego: 2.9, ptero: 2.8, trex: 4.3, trice: 
 const racers = RACER_DEFS.map((def, i) => {
   const root = new THREE.Group(); scene.add(root);
   const forms = {};
-  for (const k of Object.keys(BUILDERS)) { const f = BUILDERS[k](def.color); f.g.visible = false; root.add(f.g); forms[k] = f; }
+  for (const k of Object.keys(BUILDERS)) { const f = BUILDERS[k](def.color); if (!save.lowQ) addOutlines(f.g); f.g.visible = false; root.add(f.g); forms[k] = f; }
   const r = { ...def, lane: i, x: LANES[i], root, forms, form: 'raptor', d: 0, y: 0, vy: 0, spd: 0, phase: Math.random() * 6, switchT: 0, pop: 1, finished: false, place: 0, time: 0, lastType: 'ground', blockT: 0, told: false, ai: {} };
   forms.raptor.g.visible = true;
   if (def.player) { r.tag = makeYouTag(); scene.add(r.tag); }
@@ -970,6 +1068,7 @@ function blockLimit(r) {
       if (ob.d - r.d < HIT + .3) {
         ob.broken = true; ob.mesh.visible = false;
         spawn(new THREE.Vector3(r.x, .8, -ob.d), ob.kind === 'rocks' ? B.rock[0] : ob.kind === 'logs' ? 0x8a5a2e : 0xd8f0ff, 10, 7, 6);
+        if (r.player) camShake = .35;
         if (r.player) beep(ob.kind === 'ice' ? 900 : 110, .18, ob.kind === 'ice' ? 'triangle' : 'sawtooth', .08, ob.kind === 'ice' ? -500 : -60);
       }
       continue;
@@ -997,6 +1096,15 @@ function updateRacer(r, dt) {
   r.phase += Math.max(r.spd, r.blockT > 0 ? 6 : 0) * dt * .9 + dt * 2;
   if (r.player && r.blockT > .5 && !r.told && state === 'race') { r.told = true; toast('¡Bloqueado! Cambia de dino'); beep(180, .2, 'square', .06, -60); }
 
+  // Polvo al correr y estela al nadar
+  r.dustT = (r.dustT || 0) - dt;
+  if (r.dustT <= 0 && r.spd > 5 && !r.finished) {
+    if (['ground', 'rocks', 'logs', 'ice', 'tunnel'].includes(type) && r.form !== 'ptero' && r.form !== 'mosa') {
+      spawn(new THREE.Vector3(r.x, .1, -r.d + .9), B.dust, 1, 1.4, 1.2, { grav: -1.5, size: 1.1 }); r.dustT = .1;
+    } else if (type === 'water' && r.form === 'mosa') {
+      spawn(new THREE.Vector3(r.x, WATER_Y + .15, -r.d + 2), 0xffffff, 2, 2.4, 2.6, { size: .8 }); r.dustT = .07;
+    }
+  }
   if (type !== r.lastType) {
     if (type === 'water') { spawn(new THREE.Vector3(r.x, WATER_Y, -r.d), B.volcano ? 0xffaa44 : 0xe8f8ff, 12, 5, 6); if (r.player) beep(220, .25, 'sine', .08, -120); }
     if (type === 'mud') { spawn(new THREE.Vector3(r.x, -.1, -r.d), B.mud, 10, 4, 4); if (r.player) beep(140, .2, 'sine', .08, -60); }
@@ -1037,6 +1145,7 @@ function placeRacer(r, dt) {
 
 /* ---------- Cámara ---------- */
 const camPos = new THREE.Vector3(0, 8, 12), camLook = new THREE.Vector3();
+let camShake = 0;
 const vWant = new THREE.Vector3(), vLook = new THREE.Vector3();
 function updateCamera(dt) {
   const p = player.root.position;
@@ -1053,7 +1162,14 @@ function updateCamera(dt) {
   }
   const k = Math.min(1, dt * 4);
   camPos.lerp(vWant, k); camLook.lerp(vLook, k);
-  camera.position.copy(camPos); camera.lookAt(camLook);
+  camera.position.copy(camPos);
+  // Temblor al romper obstáculos
+  if (camShake > 0) { camShake = Math.max(0, camShake - dt); const a = camShake * .5; camera.position.x += (Math.random() - .5) * a; camera.position.y += (Math.random() - .5) * a; }
+  camera.lookAt(camLook);
+  // Sensación de velocidad: el campo de visión se abre al correr rápido
+  const fovT = camBaseFov + (state === 'race' || state === 'done' ? Math.min(9, player.spd * .5) : 0);
+  if (Math.abs(fovT - camera.fov) > .05) { camera.fov += (fovT - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
+  sky.position.copy(camera.position);
   sun.position.set(p.x - 8, p.y + 20, p.z + 6); sun.target.position.set(p.x, p.y, p.z - 6);
 }
 
@@ -1186,7 +1302,9 @@ function loop(now) {
   }
   ocean.position.z = player.root.position.z - 150;
   bed.position.z = ocean.position.z;
-  if (B.volcano) oceanMat.emissiveIntensity = .75 + Math.sin(now / 400) * .15;
+  oceanTime.value = now / 1000;
+  RIPPLE.offset.set(now / 60000, -ocean.position.z / 15 + now / 40000);
+  if (B.volcano) oceanMat.emissiveIntensity = .85 + Math.sin(now / 400) * .15;
   updateParts(dt);
   updateCamera(dt);
   updateHud();
