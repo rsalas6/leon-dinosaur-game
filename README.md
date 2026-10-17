@@ -20,9 +20,11 @@ Switch dinosaurs to match the terrain and beat three rivals to the finish line.
 
 1. Edit `dino-race.html`.
 2. Run `./build.sh`.
-3. Commit and push. Cloudflare Pages deploys `site/` automatically.
+3. Commit and push to `main`. The GitHub Action in `.github/workflows/deploy.yml` builds and deploys to Cloudflare Pages (project `leon-dinosaur-game`).
 
-Cloudflare Pages settings: framework preset **None**, build command **empty**, output directory **`site`**.
+The action needs a repository secret named `CLOUDFLARE_API_TOKEN` with the **Cloudflare Pages: Edit** permission.
+
+Live at https://leon-juego-dinosarios.beto.page (also https://leon-dinosaur-game.pages.dev).
 
 ## Local preview
 
